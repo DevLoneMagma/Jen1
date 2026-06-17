@@ -1,0 +1,58 @@
+<svg width="500" height="500" viewBox="0 0 500 500" xmlns="http://www.w3.org/2000/svg" role="img" aria-label="Jen1">
+  <title>Jen1</title>
+  <defs>
+    <linearGradient id="oneGradient" x1="0" y1="0" x2="0" y2="1">
+      <stop offset="0%" stop-color="#FF3B3B" />
+      <stop offset="55%" stop-color="#E50914" />
+      <stop offset="100%" stop-color="#A60710" />
+    </linearGradient>
+  </defs>
+
+  <rect width="500" height="500" fill="none" />
+
+  <!-- J — built as a deliberate slab-stroke monogram: a horizontal top bar,
+       a vertical stem, and a hook base curving back left. Stroke widths and
+       the corner radius are tuned to read as a heavier, more geometric cut
+       than a standard typeface J, echoing Archivo's expanded/black weight
+       rather than relying on a mirrored letterform. -->
+  <path
+    d="
+      M 84 64
+      H 220
+      V 130
+      H 152
+      V 318
+      C 152 360, 126 388, 86 388
+      C 46 388, 20 362, 18 322
+      L 18 318
+      H 84
+      C 86 344, 96 358, 112 358
+      C 128 358, 138 344, 138 322
+      V 130
+      H 84
+      Z
+    "
+    fill="#FFFFFF"
+  />
+
+  <!-- 1 — a flag stroke meeting the stem at a sharp angle, plus a wide
+       base serif, both proportioned to balance the J's weight rather
+       than sit as a thin afterthought beside it. -->
+  <path
+    d="
+      M 226 134
+      L 322 64
+      H 362
+      V 358
+      H 426
+      V 420
+      H 226
+      V 358
+      H 290
+      V 158
+      L 248 192
+      Z
+    "
+    fill="url(#oneGradient)"
+  />
+</svg>

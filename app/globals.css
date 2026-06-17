@@ -1,0 +1,131 @@
+/* app/globals.css */
+@tailwind base;
+@tailwind components;
+@tailwind utilities;
+
+:root {
+  --font-archivo: 'Archivo', sans-serif;
+  --font-inter: 'Inter', sans-serif;
+}
+
+*, *::before, *::after { box-sizing: border-box; }
+
+html { scroll-behavior: smooth; }
+
+body {
+  background: #0A0A0A;
+  color: #ffffff;
+  overflow-x: hidden;
+  -webkit-font-smoothing: antialiased;
+  -moz-osx-font-smoothing: grayscale;
+}
+
+/* ── Display type (Archivo) ──────────────────────────────────
+   Archivo is a variable font with a real width axis (62–125).
+   next/font/google exposes the weight axis directly via the
+   `weight` prop, but not width — so the expanded feel is set
+   here via font-variation-settings, applied wherever .font-archivo
+   is used. 118 sits just under the max (125) for a confident,
+   expanded-but-not-distorted letterform at any size. */
+.font-archivo {
+  font-variation-settings: 'wdth' 118;
+}
+
+/* ── Scrollbars ──────────────────────────────────────────── */
+::-webkit-scrollbar { width: 5px; height: 3px; }
+::-webkit-scrollbar-track { background: rgba(255,255,255,0.03); }
+::-webkit-scrollbar-thumb { background: #333; border-radius: 3px; }
+::-webkit-scrollbar-thumb:hover { background: #555; }
+
+/* ── Skeleton shimmer ────────────────────────────────────── */
+@keyframes shimmer {
+  0%   { background-position: 200% 0; }
+  100% { background-position: -200% 0; }
+}
+.skeleton {
+  background: linear-gradient(90deg, #161616 25%, #222 50%, #161616 75%);
+  background-size: 200% 100%;
+  animation: shimmer 1.6s ease-in-out infinite;
+}
+
+/* ── Row scroll ──────────────────────────────────────────── */
+.row-scroll {
+  scroll-snap-type: x mandatory;
+  -webkit-overflow-scrolling: touch;
+  scrollbar-width: none;
+}
+.row-scroll::-webkit-scrollbar { display: none; }
+.row-scroll > * { scroll-snap-align: start; }
+
+/* ── Card hover shadow (legacy, still used by ContinueWatching) ──
+   Used by cards whose hover state (translate/scale/etc.) is
+   driven by a `.group` ancestor — keeps the shadow transition
+   in CSS so it always tracks the same hit area as the rest of
+   the hover effect, rather than a separate JS mouse handler. */
+.jen1-card-shadow {
+  box-shadow: 0 2px 8px rgba(0,0,0,0.4);
+  transition: box-shadow 0.2s ease;
+}
+.group:hover .jen1-card-shadow {
+  box-shadow: 0 12px 32px rgba(0,0,0,0.8), 0 0 0 1.5px rgba(229,9,20,0.5);
+}
+
+/* ── Grid card system (MovieCard, MediaGrid) ─────────────────
+   A self-contained hover treatment: lift + shadow on the card
+   itself, a slower/separate scale on the image so the poster
+   never crops awkwardly against the rounded corners, and a
+   scrim that's a real layered gradient rather than a flat tint —
+   darker and tighter at the bottom (where text sits) and barely
+   present at the top, so the artwork stays legible while hovered. */
+.jen1-card {
+  box-shadow: 0 2px 6px rgba(0,0,0,0.45);
+  transition: box-shadow 0.25s cubic-bezier(0.16,1,0.3,1), transform 0.25s cubic-bezier(0.16,1,0.3,1);
+}
+.jen1-card:hover {
+  transform: translateY(-5px);
+  box-shadow: 0 18px 36px -8px rgba(0,0,0,0.7), 0 4px 12px rgba(0,0,0,0.5);
+}
+.jen1-card-image {
+  transition: transform 0.4s cubic-bezier(0.16,1,0.3,1), filter 0.25s ease;
+}
+.jen1-card:hover .jen1-card-image {
+  transform: scale(1.06);
+  filter: brightness(0.78);
+}
+.jen1-card-scrim {
+  background: linear-gradient(
+    to top,
+    rgba(0,0,0,0.92) 0%,
+    rgba(0,0,0,0.75) 28%,
+    rgba(0,0,0,0.25) 58%,
+    transparent 85%
+  );
+}
+
+/* ── Modal animations ────────────────────────────────────── */
+@keyframes modalIn {
+  from { opacity: 0; transform: scale(0.95) translateY(8px); }
+  to   { opacity: 1; transform: scale(1) translateY(0); }
+}
+@keyframes modalOut {
+  from { opacity: 1; transform: scale(1); }
+  to   { opacity: 0; transform: scale(0.95); }
+}
+.modal-enter { animation: modalIn 0.22s cubic-bezier(0.16,1,0.3,1) forwards; }
+.modal-exit  { animation: modalOut 0.18s ease forwards; }
+
+/* ── Scrim fade ──────────────────────────────────────────── */
+@keyframes scrimIn  { from { opacity: 0; } to { opacity: 1; } }
+@keyframes scrimOut { from { opacity: 1; } to { opacity: 0; } }
+.scrim-enter { animation: scrimIn 0.2s ease forwards; }
+.scrim-exit  { animation: scrimOut 0.18s ease forwards; }
+
+/* ── Selection ───────────────────────────────────────────── */
+::selection { background: rgba(229,9,20,0.28); color: #fff; }
+
+/* ── Text shadow utility ─────────────────────────────────── */
+.text-shadow-hero { text-shadow: 0 2px 30px rgba(0,0,0,0.9), 0 0 60px rgba(0,0,0,0.5); }
+
+/* ── No scrollbar ────────────────────────────────────────── */
+.no-scrollbar::-webkit-scrollbar { display: none; }
+.no-scrollbar { -ms-overflow-style: none; scrollbar-width: none; }
