@@ -9,6 +9,7 @@ import { posterUrl, backdropUrl, getTrailerKey, getTitle, getReleaseYear } from 
 import { getModalData } from '@/lib/modalCache'
 import VideoPlayer from './VideoPlayer'
 import { useKeyboard } from '@/hooks/useKeyboard'
+import { useBodyScrollLock } from '@/hooks/useBodyScrollLock'
 
 type MediaType = 'movie' | 'tv'
 
@@ -31,6 +32,14 @@ export default function DetailModal() {
   const [playMode, setPlayMode] = useState<'trailer' | 'stream'>('stream')
 
   const scrollRef = useRef<HTMLDivElement>(null)
+  // Guards against a slower-resolving fetch for a previously-opened card
+  // overwriting the currently-open card's data. Each call to openItem()
+  // stamps a new token; only the response matching the *latest* token is
+  // allowed to commit state. This is the actual fix for "the first card
+  // sometimes shows wrong/stale data" — without it, clicking card A then
+  // quickly clicking card B can let A's slower response land last and
+  // clobber B's already-rendered details.
+  const requestToken = useRef(0)
 
   const item = movie ?? show
   const type: MediaType = show ? 'tv' : 'movie'
@@ -58,6 +67,7 @@ export default function DetailModal() {
     initialSeason?: number,
     initialEpisode?: number
   ) => {
+    const myToken = ++requestToken.current
     setClosing(false)
     setLoading(true)
     setPlaying(false)
@@ -73,6 +83,12 @@ export default function DetailModal() {
     scrollRef.current?.scrollTo(0, 0)
 
     const { details, videos: vids, credits: creds, recommendations: recs } = await getModalData(id, mediaType)
+
+    // A newer openItem() call has since been made (user clicked another
+    // card before this one resolved) — drop this response on the floor
+    // instead of clobbering the newer card's state.
+    if (myToken !== requestToken.current) return
+
     if (mediaType === 'tv') setShow(details); else setMovie(details)
     setVideos(vids.results ?? [])
     setCredits(creds)
@@ -82,11 +98,13 @@ export default function DetailModal() {
 
   useEffect(() => {
     if (!show) return
+    let cancelled = false
     setEpisodesLoading(true)
     fetch(`/api/tmdb?path=/tv/${show.id}/season/${selectedSeason}`)
       .then(r => r.json())
-      .then(d => { setEpisodes(d.episodes ?? []); setEpisodesLoading(false) })
-      .catch(() => setEpisodesLoading(false))
+      .then(d => { if (!cancelled) { setEpisodes(d.episodes ?? []); setEpisodesLoading(false) } })
+      .catch(() => { if (!cancelled) setEpisodesLoading(false) })
+    return () => { cancelled = true }
   }, [show, selectedSeason])
 
   useEffect(() => {
@@ -118,8 +136,9 @@ export default function DetailModal() {
 
   const close = useCallback(() => {
     setClosing(true)
+    setPlaying(false)
     setTimeout(() => {
-      setCurrent(null); setMovie(null); setShow(null); setPlaying(false); setClosing(false)
+      setCurrent(null); setMovie(null); setShow(null); setClosing(false)
     }, 200)
   }, [])
 
@@ -131,11 +150,11 @@ export default function DetailModal() {
     'T': () => { if (item && trailerKey) { setPlayMode('trailer'); setPlaying(true) } },
   }, { enabled: !!current && !playing })
 
-  useEffect(() => {
-    if (current) document.body.style.overflow = 'hidden'
-    else document.body.style.overflow = ''
-    return () => { document.body.style.overflow = '' }
-  }, [current])
+  // Reference-counted lock (see useBodyScrollLock) — replaced a direct
+  // document.body.style.overflow set/reset that conflicted with
+  // VideoPlayer's own independent lock when the player closed but this
+  // modal stayed open underneath it.
+  useBodyScrollLock(!!current)
 
   const cast = credits?.cast?.slice(0, 5).map(c => c.name).join(', ')
   const director = credits?.crew?.find(c => c.job === 'Director' || c.job === 'Creator')
@@ -155,77 +174,93 @@ export default function DetailModal() {
         style={{ background: 'rgba(0,0,0,0.88)', backdropFilter: 'blur(10px)' }}
         onClick={e => e.target === e.currentTarget && close()}
       >
-        <div className={`bg-[#131313] rounded-none sm:rounded-2xl w-full max-w-2xl max-h-screen sm:max-h-[88vh] overflow-hidden flex flex-col shadow-2xl border border-white/05 ${isAnimating ? 'modal-exit' : 'modal-enter'}`}>
+        <div className={`bg-[#131313] rounded-none sm:rounded-2xl w-full max-w-4xl max-h-screen sm:max-h-[90vh] overflow-hidden flex flex-col shadow-2xl border border-white/05 ${isAnimating ? 'modal-exit' : 'modal-enter'}`}>
 
-          {/* Backdrop */}
-          <div className="relative h-52 sm:h-60 flex-shrink-0">
+          {/* Backdrop — title overlays directly here now, not the body */}
+          <div className="relative h-[34vh] sm:h-[42vh] min-h-[220px] max-h-[420px] flex-shrink-0">
             {loading ? (
               <div className="w-full h-full skeleton" />
             ) : item?.backdrop_path ? (
-              <Image src={backdropUrl(item.backdrop_path)} alt={getTitle(item)} fill className="object-cover object-top" priority />
+              <Image src={backdropUrl(item.backdrop_path)} alt={getTitle(item)} fill className="object-cover" priority />
             ) : (
               <div className="w-full h-full bg-[#1a1a1a]" />
             )}
-            <div className="absolute inset-0" style={{ background: 'linear-gradient(to top,#131313 0%,rgba(19,19,19,0.2) 60%,transparent 100%)' }} />
+            <div className="absolute inset-0" style={{ background: 'linear-gradient(to top,#131313 0%,rgba(19,19,19,0.55) 38%,rgba(19,19,19,0.05) 65%,transparent 100%)' }} />
+            <div className="absolute inset-0" style={{ background: 'linear-gradient(to right, rgba(10,10,10,0.5) 0%, transparent 45%)' }} />
+
             {item && (
               <Link
                 href={`/${type}/${current.id}`}
-                className="absolute top-3 right-[52px] flex items-center gap-1.5 h-8 px-3 rounded-full bg-black/50 border border-white/15 text-white/70 text-xs font-medium hover:text-white hover:bg-black/80 transition-all"
+                onClick={close}
+                className="absolute top-4 right-[56px] flex items-center gap-1.5 h-8 px-3 rounded-full bg-black/50 border border-white/15 text-white/70 text-xs font-medium hover:text-white hover:bg-black/80 transition-all"
               >
                 <Maximize2 size={12} /> Full page
               </Link>
             )}
             <button
               onClick={close}
-              className="absolute top-3 right-3 w-8 h-8 rounded-full bg-black/50 border border-white/15 text-white/70 flex items-center justify-center hover:text-white hover:bg-black/80 transition-all"
+              className="absolute top-4 right-4 w-8 h-8 rounded-full bg-black/50 border border-white/15 text-white/70 flex items-center justify-center hover:text-white hover:bg-black/80 transition-all"
             >
               <X size={15} />
             </button>
+
+            {/* Title block, set directly into the backdrop — different
+                typographic arrangement: oversized display title sits low
+                in the frame, eyebrow label above it, meta row below it,
+                all left-aligned against a wide canvas rather than the old
+                poster-plus-title pairing. */}
+            {!loading && item && (
+              <div className="absolute bottom-0 left-0 right-0 px-6 sm:px-9 pb-5 sm:pb-6">
+                <p className="font-mono text-[10px] uppercase tracking-[0.18em] text-white/40 mb-2">
+                  {type === 'tv' ? 'Series' : 'Film'}
+                  {getReleaseYear(item) && <span className="text-white/25"> · {getReleaseYear(item)}</span>}
+                </p>
+                <h2 className="font-archivo font-extrabold text-display-xl leading-[0.95] mb-3 max-w-xl">
+                  {getTitle(item)}
+                </h2>
+                <div className="flex flex-wrap items-center gap-x-4 gap-y-1 text-xs text-white/50">
+                  {runtime && <span>{runtime}</span>}
+                  {seasons && <span>{seasons} Season{seasons > 1 ? 's' : ''}</span>}
+                  <span className="flex items-center gap-1 text-yellow-400/80">
+                    <Star size={10} fill="currentColor" />
+                    {item.vote_average?.toFixed(1)}
+                    <span className="text-white/30">({item.vote_count?.toLocaleString()})</span>
+                  </span>
+                </div>
+              </div>
+            )}
           </div>
 
           {/* Body */}
-          <div ref={scrollRef} className="overflow-y-auto flex-1 px-5 sm:px-6 pb-8">
+          <div ref={scrollRef} className="overflow-y-auto flex-1 px-6 sm:px-9 pb-8 pt-6">
             {loading && !item ? (
               <div className="flex justify-center py-12">
                 <div className="w-6 h-6 border-2 border-jen1-red/50 border-t-jen1-red rounded-full animate-spin" />
               </div>
             ) : item ? (
               <>
-                {/* Header */}
-                <div className="flex gap-4 -mt-10 relative z-10 items-end mb-6">
-                  <div className="relative w-[72px] sm:w-24 h-[108px] sm:h-36 rounded-xl overflow-hidden flex-shrink-0 shadow-2xl border border-white/08">
+                {/* Actions + tagline row — poster now lives here, small,
+                    as a secondary reference rather than the dominant
+                    element it was when overlapping the backdrop seam. */}
+                <div className="flex gap-5 mb-6">
+                  <div className="relative w-16 h-24 sm:w-20 sm:h-28 rounded-lg overflow-hidden flex-shrink-0 border border-white/08 hidden sm:block">
                     <Image src={posterUrl(item.poster_path)} alt={getTitle(item)} fill className="object-cover" />
                   </div>
-                  <div className="flex-1 pb-0.5 min-w-0">
-                    <h2 className="font-archivo font-extrabold text-display-lg mb-1.5">
-                      {getTitle(item)}
-                    </h2>
+                  <div className="flex-1 min-w-0">
                     {'tagline' in item && item.tagline && (
-                      <p className="text-white/35 text-xs italic mb-2 truncate">{item.tagline}</p>
+                      <p className="text-white/35 text-sm italic mb-3">{item.tagline}</p>
                     )}
-                    {/* Meta row */}
-                    <div className="flex flex-wrap items-center gap-x-3 gap-y-1 mb-4 text-xs text-white/45">
-                      {getReleaseYear(item) && <span>{getReleaseYear(item)}</span>}
-                      {runtime && <span>{runtime}</span>}
-                      {seasons && <span>{seasons} Season{seasons > 1 ? 's' : ''}</span>}
-                      <span className="flex items-center gap-1 text-yellow-400/80">
-                        <Star size={10} fill="currentColor" />
-                        {item.vote_average?.toFixed(1)}
-                        <span className="text-white/30">({item.vote_count?.toLocaleString()})</span>
-                      </span>
-                    </div>
-                    {/* Actions */}
                     <div className="flex gap-2">
                       <button
                         onClick={() => { setPlayMode('stream'); setPlaying(true); trackPlay(selectedSeason, selectedEpisode) }}
-                        className="flex items-center gap-1.5 bg-jen1-red hover:bg-red-500 text-white font-semibold text-sm px-4 py-2 rounded-lg transition-all hover:scale-[1.03] active:scale-100 shadow-md shadow-red-900/20"
+                        className="flex items-center gap-1.5 bg-jen1-red hover:bg-red-500 text-white font-semibold text-sm px-5 py-2.5 rounded-lg transition-all hover:scale-[1.03] active:scale-100 shadow-md shadow-red-900/20"
                       >
                         <Play size={13} fill="currentColor" /> Play
                       </button>
                       {trailerKey && (
                         <button
                           onClick={() => { setPlayMode('trailer'); setPlaying(true) }}
-                          className="flex items-center gap-1.5 bg-white/08 hover:bg-white/14 text-white/80 hover:text-white font-medium text-sm px-4 py-2 rounded-lg border border-white/10 transition-all"
+                          className="flex items-center gap-1.5 bg-white/08 hover:bg-white/14 text-white/80 hover:text-white font-medium text-sm px-5 py-2.5 rounded-lg border border-white/10 transition-all"
                         >
                           Trailer
                         </button>

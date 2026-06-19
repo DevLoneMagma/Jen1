@@ -63,11 +63,13 @@ export default function DetailPage({ item, type, videos, credits, recommendation
   // Fetch episode list when season changes (TV only)
   useEffect(() => {
     if (!show) return
+    let cancelled = false
     setEpisodesLoading(true)
     fetch(`/api/tmdb?path=/tv/${show.id}/season/${selectedSeason}`)
       .then(r => r.json())
-      .then(d => { setEpisodes(d.episodes ?? []); setEpisodesLoading(false) })
-      .catch(() => setEpisodesLoading(false))
+      .then(d => { if (!cancelled) { setEpisodes(d.episodes ?? []); setEpisodesLoading(false) } })
+      .catch(() => { if (!cancelled) setEpisodesLoading(false) })
+    return () => { cancelled = true }
   }, [show, selectedSeason])
 
   const trackPlay = useCallback((season?: number, episode?: number) => {

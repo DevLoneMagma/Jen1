@@ -14,6 +14,13 @@ export interface WatchEntry {
   episode?: number
   rating: number
   addedAt: number
+  // Soft elapsed-watch-time signal in seconds. Since streams play inside
+  // third-party embed iframes (cross-origin), we have no way to read the
+  // provider's actual playback position or seek to it — there's no
+  // postMessage contract with vidsrc/vidlink/etc. This is instead wall-clock
+  // time the player was open, used only to show "you were ~12m in" and to
+  // rank/fade entries, not to resume to an exact timestamp.
+  elapsedSeconds?: number
 }
 
 // What callers actually have on hand when a play event fires:
@@ -65,10 +72,24 @@ export function useContinueWatching() {
     })
   }, [])
 
+  // Bumps the soft elapsed-time signal for an entry already in the list.
+  // Called periodically by the player while open. No-ops if the entry
+  // isn't present (e.g. it was removed mid-session).
+  const updateProgress = useCallback((id: number, type: 'movie' | 'tv', elapsedSeconds: number) => {
+    setEntries(prev => {
+      const idx = prev.findIndex(e => e.id === id && e.type === type)
+      if (idx === -1) return prev
+      const next = [...prev]
+      next[idx] = { ...next[idx], elapsedSeconds }
+      writeStorage(next)
+      return next
+    })
+  }, [])
+
   const clearAll = useCallback(() => {
     setEntries([])
     writeStorage([])
   }, [])
 
-  return { entries, addEntry, removeEntry, clearAll }
+  return { entries, addEntry, removeEntry, updateProgress, clearAll }
 }

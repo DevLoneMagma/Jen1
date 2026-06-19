@@ -108,6 +108,7 @@ export interface VideoSource {
   streamUrl: string
   source: string
   fallbacks?: string[]
+  label?: string
 }
 
 // Union type for search / rows that can be movie or TV

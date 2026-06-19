@@ -2,9 +2,10 @@
 // components/SearchBar.tsx
 import { useState, useRef, useCallback, useEffect } from 'react'
 import { useRouter } from 'next/navigation'
-import { Search, X, Film, Tv } from 'lucide-react'
+import { Search, X, Clock } from 'lucide-react'
 import type { Movie, TVShow } from '@/types/tmdb'
 import { posterUrl, getTitle, getReleaseYear } from '@/lib/tmdb'
+import { useSearchHistory } from '@/hooks/useSearchHistory'
 import Image from 'next/image'
 
 type ResultItem = (Movie & { _type: 'movie' }) | (TVShow & { _type: 'tv' })
@@ -18,6 +19,7 @@ export default function SearchBar() {
   const [activeIdx, setActiveIdx] = useState(-1)
   const timerRef = useRef<ReturnType<typeof setTimeout> | undefined>(undefined)
   const inputRef = useRef<HTMLInputElement>(null)
+  const { history, addQuery, removeQuery } = useSearchHistory()
 
   // S / / focuses search globally
   useEffect(() => {
@@ -61,16 +63,23 @@ export default function SearchBar() {
 
   const clear = () => { setQuery(''); setResults([]); setActiveIdx(-1); inputRef.current?.focus() }
 
+  const useHistoryEntry = (q: string) => {
+    setQuery(q); setActiveIdx(-1)
+    search(q)
+  }
+
   const openItem = (item: ResultItem) => {
+    if (query.trim()) addQuery(query)
     setQuery(''); setResults([]); setFocused(false); setActiveIdx(-1)
     window.dispatchEvent(new CustomEvent('open-movie', { detail: { id: item.id, type: item._type } }))
   }
 
-  const goToSearchPage = () => {
-    if (!query.trim()) return
+  const goToSearchPage = (q: string = query) => {
+    if (!q.trim()) return
+    addQuery(q)
     setFocused(false)
     inputRef.current?.blur()
-    router.push(`/search?q=${encodeURIComponent(query.trim())}`)
+    router.push(`/search?q=${encodeURIComponent(q.trim())}`)
   }
 
   const handleKeyDown = (e: React.KeyboardEvent<HTMLInputElement>) => {
@@ -84,7 +93,8 @@ export default function SearchBar() {
     else if (e.key === 'Escape') { setFocused(false); inputRef.current?.blur() }
   }
 
-  const showDropdown = focused && (results.length > 0 || loading)
+  const showHistory = focused && !query.trim() && history.length > 0
+  const showDropdown = focused && (results.length > 0 || loading || showHistory)
 
   return (
     <div className="relative w-full max-w-xs">
@@ -114,6 +124,31 @@ export default function SearchBar() {
 
       {showDropdown && (
         <div className="absolute top-full mt-2 left-0 right-0 min-w-[280px] bg-[#141414] rounded-xl border border-white/08 overflow-hidden shadow-2xl z-50">
+          {showHistory && !loading && (
+            <div className="py-1">
+              {history.map(q => (
+                <div
+                  key={q}
+                  className="group/hist flex items-center gap-2.5 px-3 py-2 hover:bg-white/06 transition-colors"
+                >
+                  <Clock size={12} className="text-white/25 flex-shrink-0" />
+                  <button
+                    onClick={() => useHistoryEntry(q)}
+                    className="flex-1 min-w-0 text-left text-white/65 text-sm truncate hover:text-white transition-colors"
+                  >
+                    {q}
+                  </button>
+                  <button
+                    onClick={e => { e.stopPropagation(); removeQuery(q) }}
+                    className="text-white/20 hover:text-white/60 transition-colors opacity-0 group-hover/hist:opacity-100 flex-shrink-0"
+                    aria-label="Remove from history"
+                  >
+                    <X size={12} />
+                  </button>
+                </div>
+              ))}
+            </div>
+          )}
           {loading && (
             <div className="flex items-center justify-center py-5">
               <div className="w-4 h-4 border-2 border-jen1-red/50 border-t-jen1-red rounded-full animate-spin" />
@@ -149,7 +184,7 @@ export default function SearchBar() {
           )}
           {!loading && results.length > 0 && (
             <button
-              onClick={goToSearchPage}
+              onClick={() => goToSearchPage()}
               className="w-full text-center text-white/45 hover:text-white text-xs font-medium py-2.5 border-t border-white/06 hover:bg-white/04 transition-colors"
             >
               See all results for "{query}" →

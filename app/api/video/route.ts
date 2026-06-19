@@ -1,10 +1,12 @@
 // app/api/video/route.ts
+
 // Robust backend: server-side HEAD-probes each provider, returns only a verified
 // working URL. Falls back silently through the list. Client never sees failures
 // in the normal path.
 
 import { NextRequest, NextResponse } from 'next/server'
 import type { VideoSource } from '@/types/tmdb'
+import { labelForUrl } from '@/lib/providerLabels'
 
 const PROBE_TIMEOUT_MS = 2500
 
@@ -28,6 +30,10 @@ const PROVIDERS = {
     `https://2embed.cc/embedtv/${id}&s=${season}&e=${episode}`,
   ],
 }
+
+// Human-readable labels for the provider-switcher UI, keyed by hostname.
+// Defined in lib/providerLabels.ts so the client UI can reuse the exact
+// same map without drifting out of sync.
 
 // In-memory LRU cache: key → { url, ts }
 // Keeps verified URLs for 10 minutes — repeat plays are instant
@@ -104,6 +110,7 @@ export async function GET(request: NextRequest) {
       streamUrl: cached,
       source: 'cached',
       fallbacks: others,
+      label: labelForUrl(cached),
     }
     return NextResponse.json(response, {
       headers: { 'Cache-Control': 'private, max-age=600' },
@@ -132,6 +139,7 @@ export async function GET(request: NextRequest) {
       streamUrl: found,
       source: 'probed',
       fallbacks,
+      label: labelForUrl(found),
     }
     return NextResponse.json(response, {
       headers: { 'Cache-Control': 'private, max-age=600' },
@@ -144,6 +152,7 @@ export async function GET(request: NextRequest) {
     streamUrl: urls[0],
     source: 'optimistic',
     fallbacks: urls.slice(1),
+    label: labelForUrl(urls[0]),
   }
   return NextResponse.json(response, {
     headers: { 'Cache-Control': 'no-store' },

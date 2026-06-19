@@ -1,4 +1,5 @@
 // app/sitemap.ts
+
 import { MetadataRoute } from 'next'
 import { getTrending, getTrendingTV } from '@/lib/tmdb'
 

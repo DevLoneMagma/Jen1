@@ -1,4 +1,5 @@
 // app/page.tsx
+
 import { Suspense } from 'react'
 import {
   getTrending, getPopular, getTopRated, getNowPlaying, getByGenre,

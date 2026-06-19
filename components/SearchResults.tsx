@@ -3,9 +3,10 @@
 import { useState, useEffect, useCallback, useRef } from 'react'
 import { useRouter } from 'next/navigation'
 import Image from 'next/image'
-import { Search, Play } from 'lucide-react'
+import { Search, Play, X } from 'lucide-react'
 import type { Movie, TVShow } from '@/types/tmdb'
 import { posterUrl, getTitle, getReleaseYear } from '@/lib/tmdb'
+import { useSearchHistory } from '@/hooks/useSearchHistory'
 
 interface SearchResultsProps {
   query: string
@@ -25,6 +26,14 @@ export default function SearchResults({ query }: SearchResultsProps) {
   const [loading, setLoading] = useState(false)
   const movieLoaderRef = useRef<HTMLDivElement>(null)
   const tvLoaderRef = useRef<HTMLDivElement>(null)
+  const { history, addQuery, removeQuery } = useSearchHistory()
+
+  // Record the query into history once it actually lands here from the URL
+  // (covers all entry points: navbar search, this page's own form, a
+  // shared/bookmarked /search?q= link).
+  useEffect(() => {
+    if (query.trim()) addQuery(query)
+  }, [query, addQuery])
 
   // Reset and reload whenever the query (from the URL) changes
   useEffect(() => {
@@ -114,7 +123,33 @@ export default function SearchResults({ query }: SearchResultsProps) {
       </form>
 
       {!hasQuery && (
-        <p className="text-white/30 text-sm">Type a title above and press Enter.</p>
+        <div>
+          <p className="text-white/30 text-sm mb-4">Type a title above and press Enter.</p>
+          {history.length > 0 && (
+            <div>
+              <p className="text-white/25 text-xs uppercase tracking-widest mb-3">Recent searches</p>
+              <div className="flex flex-wrap gap-2">
+                {history.map(q => (
+                  <div key={q} className="group/chip flex items-center gap-1.5 bg-white/06 border border-white/10 rounded-full pl-3 pr-2 py-1.5">
+                    <button
+                      onClick={() => router.push(`/search?q=${encodeURIComponent(q)}`)}
+                      className="text-white/60 hover:text-white text-xs transition-colors"
+                    >
+                      {q}
+                    </button>
+                    <button
+                      onClick={() => removeQuery(q)}
+                      className="text-white/20 hover:text-white/60 transition-colors opacity-0 group-hover/chip:opacity-100"
+                      aria-label="Remove from history"
+                    >
+                      <X size={11} />
+                    </button>
+                  </div>
+                ))}
+              </div>
+            </div>
+          )}
+        </div>
       )}
 
       {loading && (

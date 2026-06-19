@@ -65,6 +65,11 @@ export default function ContinueWatching() {
                   {entry.type === 'tv' && entry.season && (
                     <div className="text-white/45 text-[10px] mt-0.5">S{entry.season} · E{entry.episode}</div>
                   )}
+                  {!!entry.elapsedSeconds && entry.elapsedSeconds >= 60 && (
+                    <div className="text-white/35 text-[10px] mt-0.5">
+                      {Math.round(entry.elapsedSeconds / 60)}m in
+                    </div>
+                  )}
                 </div>
               </div>
 
@@ -76,6 +81,18 @@ export default function ContinueWatching() {
               >
                 <X size={11} />
               </button>
+
+              {/* Soft progress bar — wall-clock based, see WatchEntry docs.
+                  Capped visually at 90% so it never claims "finished" with
+                  false precision; it's a glance-level signal, not a seek bar. */}
+              {!!entry.elapsedSeconds && entry.elapsedSeconds >= 60 && (
+                <div className="absolute bottom-0 left-0 right-0 h-[3px] bg-black/40">
+                  <div
+                    className="h-full bg-jen1-red"
+                    style={{ width: `${Math.min(90, (entry.elapsedSeconds / 1800) * 100)}%` }}
+                  />
+                </div>
+              )}
             </div>
           </div>
         ))}

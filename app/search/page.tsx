@@ -1,4 +1,5 @@
 // app/search/page.tsx
+
 import type { Metadata } from 'next'
 import Navbar from '@/components/Navbar'
 import SearchResults from '@/components/SearchResults'

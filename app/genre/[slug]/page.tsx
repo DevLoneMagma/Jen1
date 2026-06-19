@@ -1,4 +1,5 @@
 // app/genre/[slug]/page.tsx
+
 // Genre discovery page with infinite scroll and sort/filter controls.
 
 import type { Metadata } from 'next'

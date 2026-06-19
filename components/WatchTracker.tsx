@@ -6,7 +6,7 @@ import { useEffect } from 'react'
 import { useContinueWatching } from '@/hooks/useContinueWatching'
 
 export default function WatchTracker() {
-  const { addEntry } = useContinueWatching()
+  const { addEntry, updateProgress } = useContinueWatching()
 
   useEffect(() => {
     // Fired by DetailModal when user presses Play
@@ -32,9 +32,19 @@ export default function WatchTracker() {
         ...(d.type === 'tv' ? { season: d.season, episode: d.episode } : {}),
       })
     }
+    // Fired periodically by VideoPlayer while a stream is open — soft
+    // wall-clock signal only, see WatchEntry.elapsedSeconds for why.
+    const onProgress = (e: Event) => {
+      const ev = e as CustomEvent<{ id: number; type: 'movie' | 'tv'; elapsedSeconds: number }>
+      updateProgress(ev.detail.id, ev.detail.type, ev.detail.elapsedSeconds)
+    }
     window.addEventListener('track-watch', onPlay)
-    return () => window.removeEventListener('track-watch', onPlay)
-  }, [addEntry])
+    window.addEventListener('track-progress', onProgress)
+    return () => {
+      window.removeEventListener('track-watch', onPlay)
+      window.removeEventListener('track-progress', onProgress)
+    }
+  }, [addEntry, updateProgress])
 
   return null
 }

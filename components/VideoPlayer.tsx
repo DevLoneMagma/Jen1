@@ -1,9 +1,16 @@
 'use client'
 // components/VideoPlayer.tsx
 import { useState, useEffect, useRef, useCallback } from 'react'
-import { ArrowLeft, RefreshCw, Maximize, Minimize } from 'lucide-react'
+import { ArrowLeft, ChevronDown, Maximize, Minimize, Check } from 'lucide-react'
 import type { VideoSource } from '@/types/tmdb'
+import { labelForUrl } from '@/lib/providerLabels'
 import { useKeyboard } from '@/hooks/useKeyboard'
+import { useBodyScrollLock } from '@/hooks/useBodyScrollLock'
+
+interface ServerOption {
+  url: string
+  label: string
+}
 
 interface VideoPlayerProps {
   movieId: number
@@ -20,19 +27,43 @@ export default function VideoPlayer({
   movieId, movieTitle, trailerKey, mode, mediaType,
   season = 1, episode = 1, onClose,
 }: VideoPlayerProps) {
-  const [streamUrl, setStreamUrl] = useState('')
-  const [fallbacks, setFallbacks] = useState<string[]>([])
-  const [fallbackIdx, setFallbackIdx] = useState(0)
+  // The full ordered server list (current source first, fallbacks after).
+  // Replaces the old "current index into a fallbacks array" approach so the
+  // picker UI can jump directly to any server, not just step to "next".
+  const [servers, setServers] = useState<ServerOption[]>([])
+  const [activeIdx, setActiveIdx] = useState(0)
   const [loading, setLoading] = useState(true)
   const [hardError, setHardError] = useState(false)      // all sources exhausted
   const [isFullscreen, setIsFullscreen] = useState(false)
+  const [pickerOpen, setPickerOpen] = useState(false)
   const containerRef = useRef<HTMLDivElement>(null)
+  const pickerRef = useRef<HTMLDivElement>(null)
   const autoFallbackRef = useRef<ReturnType<typeof setTimeout> | undefined>(undefined)
 
+  const streamUrl = servers[activeIdx]?.url ?? ''
+
+  // Reference-counted body scroll lock — see useBodyScrollLock for why
+  // this replaced a plain document.body.style.overflow set/reset (it
+  // conflicted with DetailModal's own lock: closing just the player while
+  // the modal stayed open would reset overflow to '' on this component's
+  // unmount, even though the modal underneath still needed it locked).
+  useBodyScrollLock(true)
+
+  // Soft wall-clock progress signal — see WatchEntry.elapsedSeconds for why
+  // this can't be a real playback position. Ticks while the player is open
+  // in stream mode, so "Continue Watching" can show roughly how far in the
+  // user was, not seek-accurate but useful enough to show the row card.
   useEffect(() => {
-    document.body.style.overflow = 'hidden'
-    return () => { document.body.style.overflow = '' }
-  }, [])
+    if (mode !== 'stream') return
+    const start = Date.now()
+    const tick = () => {
+      window.dispatchEvent(new CustomEvent('track-progress', {
+        detail: { id: movieId, type: mediaType, elapsedSeconds: Math.round((Date.now() - start) / 1000) },
+      }))
+    }
+    const interval = setInterval(tick, 15_000)
+    return () => { clearInterval(interval); tick() }
+  }, [mode, movieId, mediaType])
 
   useEffect(() => {
     const h = () => setIsFullscreen(!!document.fullscreenElement)
@@ -45,32 +76,35 @@ export default function VideoPlayer({
     else document.exitFullscreen?.()
   }, [])
 
-  // Silent auto-advance fallback — no error flash
-  const tryNext = useCallback((currentIdx: number, currentFallbacks: string[]) => {
-    const next = currentIdx + 1
-    if (next < currentFallbacks.length) {
-      setFallbackIdx(next)
-      setStreamUrl(currentFallbacks[next])
-      setLoading(true)
-      setHardError(false)
-    } else {
+  // Jump to any server by index — used both by direct picker selection and
+  // by the silent stall/auto-advance path below.
+  const selectServer = useCallback((idx: number, list: ServerOption[]) => {
+    if (idx >= list.length) {
       setHardError(true)
       setLoading(false)
+      return
     }
+    setActiveIdx(idx)
+    setLoading(true)
+    setHardError(false)
+    setPickerOpen(false)
   }, [])
 
   // Load source
   useEffect(() => {
     setLoading(true)
     setHardError(false)
-    setFallbackIdx(0)
+    setActiveIdx(0)
     clearTimeout(autoFallbackRef.current)
 
     if (mode === 'trailer') {
       if (trailerKey) {
-        setStreamUrl(`https://www.youtube.com/embed/${trailerKey}?autoplay=1&rel=0&modestbranding=1&color=white`)
-        setFallbacks([])
+        setServers([{
+          url: `https://www.youtube.com/embed/${trailerKey}?autoplay=1&rel=0&modestbranding=1&color=white`,
+          label: 'YouTube',
+        }])
       } else {
+        setServers([])
         setHardError(true)
       }
       setLoading(false)
@@ -86,8 +120,11 @@ export default function VideoPlayer({
     fetch(`/api/video?${params}`)
       .then(r => r.json())
       .then((data: VideoSource) => {
-        setStreamUrl(data.streamUrl)
-        setFallbacks(data.fallbacks ?? [])
+        const list: ServerOption[] = [
+          { url: data.streamUrl, label: data.label ?? labelForUrl(data.streamUrl) },
+          ...(data.fallbacks ?? []).map(url => ({ url, label: labelForUrl(url) })),
+        ]
+        setServers(list)
         setLoading(false)
       })
       .catch(() => { setHardError(true); setLoading(false) })
@@ -99,23 +136,33 @@ export default function VideoPlayer({
     clearTimeout(autoFallbackRef.current)
   }, [])
 
-  // If iframe stalls (30s no load), silently advance
+  // If iframe stalls (30s no load), silently advance to the next server
   useEffect(() => {
     if (!streamUrl || hardError || !loading) return
     clearTimeout(autoFallbackRef.current)
     autoFallbackRef.current = setTimeout(() => {
-      tryNext(fallbackIdx, fallbacks)
+      selectServer(activeIdx + 1, servers)
     }, 30_000)
     return () => clearTimeout(autoFallbackRef.current)
-  }, [streamUrl, hardError, loading, fallbackIdx, fallbacks, tryNext])
+  }, [streamUrl, hardError, loading, activeIdx, servers, selectServer])
 
   useKeyboard({
     'Escape': onClose,
     'f': (e) => { e.preventDefault(); toggleFullscreen() },
     'F': (e) => { e.preventDefault(); toggleFullscreen() },
-    'n': () => { if (mode === 'stream') tryNext(fallbackIdx, fallbacks) },
-    'N': () => { if (mode === 'stream') tryNext(fallbackIdx, fallbacks) },
+    'n': () => { if (mode === 'stream') selectServer(activeIdx + 1, servers) },
+    'N': () => { if (mode === 'stream') selectServer(activeIdx + 1, servers) },
   }, { ignoreInputs: false })
+
+  // Close the picker on outside click
+  useEffect(() => {
+    if (!pickerOpen) return
+    const handler = (e: MouseEvent) => {
+      if (pickerRef.current && !pickerRef.current.contains(e.target as Node)) setPickerOpen(false)
+    }
+    document.addEventListener('mousedown', handler)
+    return () => document.removeEventListener('mousedown', handler)
+  }, [pickerOpen])
 
   return (
     <div ref={containerRef} className="fixed inset-0 z-[70] bg-black flex flex-col">
@@ -137,15 +184,43 @@ export default function VideoPlayer({
         </button>
 
         <div className="ml-auto flex items-center gap-2">
-          {/* Manual source switch — quiet, icon-only */}
-          {mode === 'stream' && !hardError && fallbackIdx < fallbacks.length && (
-            <button
-              onClick={() => tryNext(fallbackIdx, fallbacks)}
-              className="w-8 h-8 flex items-center justify-center text-white/40 hover:text-white transition-colors rounded hover:bg-white/08"
-              aria-label="Try next source"
-            >
-              <RefreshCw size={14} />
-            </button>
+          {/* Server picker — replaces the old single "try next" icon with
+              direct selection across every available source, labeled by
+              provider name rather than a hidden retry action. */}
+          {mode === 'stream' && servers.length > 1 && (
+            <div className="relative" ref={pickerRef}>
+              <button
+                onClick={() => setPickerOpen(o => !o)}
+                className="flex items-center gap-1.5 h-8 px-3 rounded-md text-white/60 hover:text-white text-xs font-medium transition-colors hover:bg-white/08"
+                aria-haspopup="listbox"
+                aria-expanded={pickerOpen}
+              >
+                <span className="w-1.5 h-1.5 rounded-full bg-emerald-400" />
+                {servers[activeIdx]?.label ?? 'Server'}
+                <ChevronDown size={13} className={`transition-transform ${pickerOpen ? 'rotate-180' : ''}`} />
+              </button>
+              {pickerOpen && (
+                <div
+                  role="listbox"
+                  className="absolute top-full right-0 mt-1.5 min-w-[160px] bg-[#161616] border border-white/10 rounded-lg shadow-2xl overflow-hidden z-20 py-1"
+                >
+                  {servers.map((s, i) => (
+                    <button
+                      key={s.url}
+                      role="option"
+                      aria-selected={i === activeIdx}
+                      onClick={() => selectServer(i, servers)}
+                      className={`w-full flex items-center justify-between gap-2 px-3 py-2 text-xs transition-colors ${
+                        i === activeIdx ? 'text-white bg-white/06' : 'text-white/55 hover:text-white hover:bg-white/06'
+                      }`}
+                    >
+                      {s.label}
+                      {i === activeIdx && <Check size={12} className="text-jen1-red flex-shrink-0" />}
+                    </button>
+                  ))}
+                </div>
+              )}
+            </div>
           )}
           <button
             onClick={toggleFullscreen}
